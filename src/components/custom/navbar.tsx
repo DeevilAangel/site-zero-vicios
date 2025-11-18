@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Menu, X, Heart, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
 export function Navbar() {
@@ -14,20 +14,39 @@ export function Navbar() {
   const [hasQuiz, setHasQuiz] = useState(false);
 
   useEffect(() => {
+    // Verificar se Supabase está configurado
+    if (!isSupabaseConfigured() || !supabase) {
+      return;
+    }
+
     // Verificar se usuário está logado
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-
-      if (user) {
-        // Verificar se usuário já fez o quiz
-        const { data: quizData } = await supabase
-          .from('quiz_data')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
         
-        setHasQuiz(!!quizData);
+        if (error) {
+          console.error("Erro ao buscar usuário:", error);
+          return;
+        }
+
+        setUser(user);
+
+        if (user) {
+          // Verificar se usuário já fez o quiz
+          const { data: quizData, error: quizError } = await supabase
+            .from('quiz_responses')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
+          
+          if (quizError && quizError.code !== 'PGRST116') {
+            console.error("Erro ao buscar quiz:", quizError);
+          }
+          
+          setHasQuiz(!!quizData);
+        }
+      } catch (error) {
+        console.error("Erro ao verificar usuário:", error);
       }
     };
 
@@ -42,8 +61,14 @@ export function Navbar() {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    if (!supabase) return;
+    
+    try {
+      await supabase.auth.signOut();
+      router.push("/");
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+    }
   };
 
   const navLinks = [

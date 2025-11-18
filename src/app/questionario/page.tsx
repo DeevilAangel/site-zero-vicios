@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/custom/navbar";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   Smartphone,
   CheckCircle2
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface QuestionarioData {
   // Seção 1
@@ -60,6 +61,7 @@ interface QuestionarioData {
 export default function QuestionarioPage() {
   const router = useRouter();
   const [perguntaAtual, setPerguntaAtual] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<QuestionarioData>({
     vicios: [],
     motivacao: "",
@@ -67,6 +69,16 @@ export default function QuestionarioPage() {
     impactos: [],
     tentativasAnteriores: "",
   });
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+      }
+    };
+    checkAuth();
+  }, [router]);
 
   // Construir array de perguntas dinamicamente
   const construirPerguntas = () => {
@@ -136,14 +148,110 @@ export default function QuestionarioPage() {
     }));
   };
 
+  const salvarNoSupabase = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error("Usuário não autenticado");
+      }
+
+      console.log("Iniciando salvamento do quiz para usuário:", user.id);
+
+      // Preparar dados para salvar
+      const dadosParaSalvar = {
+        user_id: user.id,
+        vicios: dados.vicios,
+        motivacao: dados.motivacao || null,
+        frequencia_perda: dados.frequenciaPerda || null,
+        impactos: dados.impactos,
+        tentativas_anteriores: dados.tentativasAnteriores || null,
+        cigarros_por_dia: dados.cigarrosPorDia || null,
+        preco_maco: dados.precoMaco || null,
+        gasto_semanal_alcool: dados.gastoSemanalAlcool || null,
+        gasto_mensal_jogos: dados.gastoMensalJogos || null,
+        horas_por_dia_celular: dados.horasPorDiaCelular || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      console.log("Dados preparados para salvar:", dadosParaSalvar);
+
+      // Verificar se já existe registro
+      const { data: existente, error: erroConsulta } = await supabase
+        .from('quiz_responses')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (erroConsulta) {
+        console.error("Erro ao consultar dados existentes:", erroConsulta);
+        throw erroConsulta;
+      }
+
+      console.log("Registro existente?", existente ? "Sim" : "Não");
+
+      if (existente) {
+        // Atualizar registro existente
+        console.log("Atualizando registro existente...");
+        const { data, error } = await supabase
+          .from('quiz_responses')
+          .update({
+            vicios: dadosParaSalvar.vicios,
+            motivacao: dadosParaSalvar.motivacao,
+            frequencia_perda: dadosParaSalvar.frequencia_perda,
+            impactos: dadosParaSalvar.impactos,
+            tentativas_anteriores: dadosParaSalvar.tentativas_anteriores,
+            cigarros_por_dia: dadosParaSalvar.cigarros_por_dia,
+            preco_maco: dadosParaSalvar.preco_maco,
+            gasto_semanal_alcool: dadosParaSalvar.gasto_semanal_alcool,
+            gasto_mensal_jogos: dadosParaSalvar.gasto_mensal_jogos,
+            horas_por_dia_celular: dadosParaSalvar.horas_por_dia_celular,
+            updated_at: dadosParaSalvar.updated_at
+          })
+          .eq('user_id', user.id)
+          .select();
+
+        if (error) {
+          console.error("Erro ao atualizar:", error);
+          throw error;
+        }
+
+        console.log("Registro atualizado com sucesso:", data);
+      } else {
+        // Inserir novo registro
+        console.log("Inserindo novo registro...");
+        const { data, error } = await supabase
+          .from('quiz_responses')
+          .insert([dadosParaSalvar])
+          .select();
+
+        if (error) {
+          console.error("Erro ao inserir:", error);
+          throw error;
+        }
+
+        console.log("Registro inserido com sucesso:", data);
+      }
+
+      console.log("✅ Quiz salvo com sucesso! Redirecionando para o dashboard...");
+      router.push("/dashboard");
+    } catch (error: any) {
+      console.error("❌ Erro ao salvar quiz:", error);
+      alert(`Erro ao salvar suas respostas: ${error?.message || "Erro desconhecido"}. Por favor, tente novamente.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const proximaPergunta = () => {
     if (perguntaAtual < totalPerguntas - 1) {
       setPerguntaAtual(perguntaAtual + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      // Finalizar questionário e salvar dados
-      localStorage.setItem("questionarioZeroVicios", JSON.stringify(dados));
-      router.push("/dashboard");
+      // Finalizar questionário e salvar no Supabase
+      salvarNoSupabase();
     }
   };
 
@@ -832,10 +940,12 @@ export default function QuestionarioPage() {
             <Button
               size="lg"
               onClick={proximaPergunta}
-              disabled={!podeAvancar()}
+              disabled={!podeAvancar() || loading}
               className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-6 sm:px-8"
             >
-              {perguntaAtual === totalPerguntas - 1 ? (
+              {loading ? (
+                "Salvando..."
+              ) : perguntaAtual === totalPerguntas - 1 ? (
                 <>
                   Finalizar
                   <CheckCircle2 className="ml-2 w-5 h-5" />

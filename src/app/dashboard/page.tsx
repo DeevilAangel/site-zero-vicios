@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/custom/navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,21 +27,18 @@ import {
   BookOpen,
   ListTodo,
   BarChart3,
-  User,
-  Settings,
-  Home,
   ChevronRight,
 } from "lucide-react";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
-// Tipos
-interface QuestionarioData {
+interface QuizData {
   vicios: string[];
-  frequenciaPerda: string;
-  cigarrosPorDia?: number;
-  precoMaco?: number;
-  gastoSemanalAlcool?: number;
-  gastoMensalJogos?: number;
-  horasPorDiaCelular?: number;
+  frequencia_perda: string;
+  cigarros_por_dia?: number;
+  preco_maco?: number;
+  gasto_semanal_alcool?: number;
+  gasto_mensal_jogos?: number;
+  horas_por_dia_celular?: number;
 }
 
 interface Meta {
@@ -70,15 +68,9 @@ interface ProgressoVicio {
 }
 
 export default function DashboardPage() {
-  const [mounted, setMounted] = useState(false);
-  const [dadosQuestionario, setDadosQuestionario] = useState<QuestionarioData>({
-    vicios: ["fumar", "celular"],
-    frequenciaPerda: "Quase todos os dias",
-    cigarrosPorDia: 20,
-    precoMaco: 12,
-    horasPorDiaCelular: 6,
-  });
-
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [quizData, setQuizData] = useState<QuizData | null>(null);
   const [metas, setMetas] = useState<Meta[]>([]);
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
   const [progressos, setProgressos] = useState<ProgressoVicio[]>([]);
@@ -87,35 +79,106 @@ export default function DashboardPage() {
   const [xpAtual, setXpAtual] = useState(0);
   const [xpProximoNivel, setXpProximoNivel] = useState(100);
   const [streak, setStreak] = useState(0);
+  const [erroConexao, setErroConexao] = useState(false);
 
-  // Carregar dados do localStorage apenas no cliente
   useEffect(() => {
-    setMounted(true);
-    const dadosSalvos = localStorage.getItem("questionarioZeroVicios");
-    if (dadosSalvos) {
-      setDadosQuestionario(JSON.parse(dadosSalvos));
-    }
+    const loadDashboard = async () => {
+      // Verificar se Supabase está configurado
+      if (!isSupabaseConfigured() || !supabase) {
+        console.error("Supabase não está configurado");
+        setErroConexao(true);
+        setLoading(false);
+        return;
+      }
 
-    // Definir mensagem motivacional fixa para evitar hydration mismatch
-    const mensagens = [
-      "Você está construindo uma nova história. Um passo de cada vez.",
-      "Cada pequena vitória te aproxima da liberdade.",
-      "O progresso não é linear, mas você está avançando.",
-      "Você é mais forte do que seus hábitos.",
-      "Hoje é um novo dia para fazer escolhas melhores.",
-    ];
-    setMensagemMotivacional(mensagens[0]);
-  }, []);
+      try {
+        // Verificar sessão primeiro (mais leve que getUser)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session) {
+          console.log("Nenhuma sessão ativa, redirecionando para login");
+          router.push("/login");
+          return;
+        }
 
-  // Gerar metas personalizadas baseadas no questionário
+        const userId = session.user.id;
+        console.log("✅ Sessão ativa para usuário:", userId);
+
+        // Buscar dados do quiz
+        const { data: quizArray, error: quizError } = await supabase
+          .from('quiz_responses')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        console.log("Resultado da busca do quiz:", { quizArray, quizError });
+
+        // Verificar se encontrou dados
+        if (quizError) {
+          console.error("❌ Erro ao buscar quiz:", quizError);
+          router.push("/questionario");
+          return;
+        }
+
+        if (!quizArray || quizArray.length === 0) {
+          console.log("⚠️ Nenhum quiz encontrado, redirecionando para questionário");
+          router.push("/questionario");
+          return;
+        }
+
+        const quiz = quizArray[0];
+        console.log("✅ Quiz encontrado:", quiz);
+
+        // Carregar dados do quiz
+        setQuizData({
+          vicios: quiz.vicios || [],
+          frequencia_perda: quiz.frequencia_perda || "",
+          cigarros_por_dia: quiz.cigarros_por_dia,
+          preco_maco: quiz.preco_maco,
+          gasto_semanal_alcool: quiz.gasto_semanal_alcool,
+          gasto_mensal_jogos: quiz.gasto_mensal_jogos,
+          horas_por_dia_celular: quiz.horas_por_dia_celular,
+        });
+
+        // Definir mensagem motivacional
+        const mensagens = [
+          "Você está construindo uma nova história. Um passo de cada vez.",
+          "Cada pequena vitória te aproxima da liberdade.",
+          "O progresso não é linear, mas você está avançando.",
+          "Você é mais forte do que seus hábitos.",
+          "Hoje é um novo dia para fazer escolhas melhores.",
+        ];
+        setMensagemMotivacional(mensagens[Math.floor(Math.random() * mensagens.length)]);
+
+        setLoading(false);
+      } catch (error: any) {
+        console.error("❌ Erro ao carregar dashboard:", error);
+        
+        // Verificar se é erro de rede/conexão
+        if (error.message?.includes('fetch') || error.message?.includes('network')) {
+          setErroConexao(true);
+        } else {
+          // Outros erros, redirecionar para login
+          router.push("/login");
+        }
+        
+        setLoading(false);
+      }
+    };
+
+    loadDashboard();
+  }, [router]);
+
+  // Gerar metas personalizadas baseadas no quiz
   useEffect(() => {
-    if (!mounted) return;
+    if (!quizData) return;
 
     const metasGeradas: Meta[] = [];
     const recompensasGeradas: Recompensa[] = [];
     const progressosGerados: ProgressoVicio[] = [];
 
-    dadosQuestionario.vicios.forEach((vicio) => {
+    quizData.vicios.forEach((vicio) => {
       // Gerar metas por vício
       if (vicio === "fumar") {
         metasGeradas.push(
@@ -162,8 +225,8 @@ export default function DashboardPage() {
           }
         );
 
-        const cigarrosPorDia = dadosQuestionario.cigarrosPorDia || 0;
-        const precoMaco = dadosQuestionario.precoMaco || 0;
+        const cigarrosPorDia = quizData.cigarros_por_dia || 0;
+        const precoMaco = quizData.preco_maco || 0;
         const macosPorDia = cigarrosPorDia / 20;
         const gastoMensal = macosPorDia * precoMaco * 30;
 
@@ -212,7 +275,7 @@ export default function DashboardPage() {
           desbloqueada: false,
         });
 
-        const gastoSemanal = dadosQuestionario.gastoSemanalAlcool || 0;
+        const gastoSemanal = quizData.gasto_semanal_alcool || 0;
         const gastoMensal = gastoSemanal * 4.3;
 
         progressosGerados.push({
@@ -260,7 +323,7 @@ export default function DashboardPage() {
           desbloqueada: false,
         });
 
-        const gastoMensal = dadosQuestionario.gastoMensalJogos || 0;
+        const gastoMensal = quizData.gasto_mensal_jogos || 0;
 
         progressosGerados.push({
           vicio: "jogos",
@@ -307,7 +370,7 @@ export default function DashboardPage() {
           desbloqueada: false,
         });
 
-        const horasPorDia = dadosQuestionario.horasPorDiaCelular || 0;
+        const horasPorDia = quizData.horas_por_dia_celular || 0;
         const horasPorMes = horasPorDia * 30;
 
         progressosGerados.push({
@@ -323,7 +386,7 @@ export default function DashboardPage() {
     setMetas(metasGeradas);
     setRecompensas(recompensasGeradas);
     setProgressos(progressosGerados);
-  }, [dadosQuestionario, mounted]);
+  }, [quizData]);
 
   const toggleMeta = (metaId: string) => {
     const meta = metas.find((m) => m.id === metaId);
@@ -412,8 +475,71 @@ export default function DashboardPage() {
     }
   };
 
-  if (!mounted) {
-    return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <Navbar />
+        <div className="pt-32 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando seu dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (erroConexao) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <Navbar />
+        <div className="pt-32 flex items-center justify-center px-4">
+          <Card className="p-8 max-w-md text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">⚠️</span>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Erro de Conexão
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Não foi possível conectar ao Supabase. Verifique se suas credenciais estão configuradas corretamente.
+            </p>
+            <div className="space-y-3">
+              <Button
+                onClick={() => window.location.reload()}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+              >
+                Tentar Novamente
+              </Button>
+              <p className="text-sm text-gray-500">
+                Clique no banner laranja acima para configurar suas variáveis de ambiente.
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!quizData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        <Navbar />
+        <div className="pt-32 flex items-center justify-center">
+          <Card className="p-8 max-w-md text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Configure o Supabase
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Para usar o dashboard, você precisa configurar suas credenciais do Supabase.
+            </p>
+            <p className="text-sm text-gray-500">
+              Clique no banner laranja acima para configurar suas variáveis de ambiente.
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   const metasDiarias = metas.filter((m) => m.tipo === "diaria");
@@ -439,7 +565,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Cards de Stats Principais - Inspirado na imagem */}
+            {/* Cards de Stats Principais */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               {/* Nível */}
               <Card className="p-5 bg-gradient-to-br from-violet-500 to-purple-600 text-white border-0">

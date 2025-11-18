@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Heart, Mail, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Heart, Mail, Lock, ArrowRight, CheckCircle2, User } from "lucide-react";
 import Link from "next/link";
 
 export default function RegistroPage() {
   const router = useRouter();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -35,10 +37,22 @@ export default function RegistroPage() {
       return;
     }
 
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("Nome e sobrenome são obrigatórios");
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+          }
+        }
       });
 
       if (error) throw error;
@@ -69,6 +83,44 @@ export default function RegistroPage() {
         </div>
 
         <form onSubmit={handleRegister} className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName" className="text-gray-700">
+                Nome
+              </Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Input
+                  id="firstName"
+                  type="text"
+                  placeholder="João"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="lastName" className="text-gray-700">
+                Sobrenome
+              </Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Input
+                  id="lastName"
+                  type="text"
+                  placeholder="Silva"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="email" className="text-gray-700">
               Email
