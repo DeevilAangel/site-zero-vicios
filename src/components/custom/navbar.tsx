@@ -1,15 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Menu, X, Heart } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Menu, X, Heart, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 export function Navbar() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [hasQuiz, setHasQuiz] = useState(false);
+
+  useEffect(() => {
+    // Verificar se usuário está logado
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      if (user) {
+        // Verificar se usuário já fez o quiz
+        const { data: quizData } = await supabase
+          .from('quiz_data')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        
+        setHasQuiz(!!quizData);
+      }
+    };
+
+    checkUser();
+
+    // Listener para mudanças de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   const navLinks = [
     { href: "/", label: "Home" },
+    ...(user && hasQuiz ? [{ href: "/meu-plano", label: "Meu Plano" }] : []),
     { href: "/planos", label: "Planos Personalizados" },
     { href: "/ferramentas", label: "Ferramentas" },
     { href: "/comunidade", label: "Comunidade" },
@@ -45,10 +84,38 @@ export function Navbar() {
           </div>
 
           {/* CTA Button Desktop */}
-          <div className="hidden md:block">
-            <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white">
-              Começar Agora
-            </Button>
+          <div className="hidden md:flex items-center gap-2">
+            {user ? (
+              <>
+                <Link href="/dashboard">
+                  <Button variant="outline" className="gap-2">
+                    <User className="w-4 h-4" />
+                    Dashboard
+                  </Button>
+                </Link>
+                <Button
+                  variant="ghost"
+                  onClick={handleLogout}
+                  className="gap-2 text-gray-600 hover:text-red-600"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sair
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="outline">
+                    Entrar
+                  </Button>
+                </Link>
+                <Link href="/registro">
+                  <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white">
+                    Começar Agora
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -78,9 +145,41 @@ export function Navbar() {
                   {link.label}
                 </Link>
               ))}
-              <Button className="mt-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white">
-                Começar Agora
-              </Button>
+              
+              {user ? (
+                <>
+                  <Link href="/dashboard" onClick={() => setIsOpen(false)}>
+                    <Button variant="outline" className="w-full gap-2">
+                      <User className="w-4 h-4" />
+                      Dashboard
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      handleLogout();
+                      setIsOpen(false);
+                    }}
+                    className="w-full gap-2 text-gray-600 hover:text-red-600"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sair
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Link href="/login" onClick={() => setIsOpen(false)}>
+                    <Button variant="outline" className="w-full">
+                      Entrar
+                    </Button>
+                  </Link>
+                  <Link href="/registro" onClick={() => setIsOpen(false)}>
+                    <Button className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white">
+                      Começar Agora
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}

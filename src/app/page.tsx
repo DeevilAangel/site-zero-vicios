@@ -20,8 +20,30 @@ import {
   Shield
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function Home() {
+  const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session);
+    };
+    checkAuth();
+  }, []);
+
+  const handleStartJourney = () => {
+    if (!isLoggedIn) {
+      router.push("/login");
+    } else {
+      router.push("/questionario");
+    }
+  };
+
   const addictions = [
     { icon: Cigarette, name: "Cigarro", color: "from-orange-400 to-red-500" },
     { icon: Smartphone, name: "Celular", color: "from-blue-400 to-indigo-500" },
@@ -108,12 +130,14 @@ export default function Home() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link href="/questionario">
-                <Button size="lg" className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-lg px-8 py-6 h-auto">
-                  Começar Minha Jornada
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-              </Link>
+              <Button 
+                size="lg" 
+                onClick={handleStartJourney}
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-lg px-8 py-6 h-auto"
+              >
+                Começar Minha Jornada
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Button>
               <Link href="/ferramentas">
                 <Button size="lg" variant="outline" className="text-lg px-8 py-6 h-auto border-2 hover:bg-gray-50">
                   Ver Ferramentas Gratuitas
@@ -237,12 +261,14 @@ export default function Home() {
             <p className="text-xl text-emerald-50 mb-8 max-w-2xl mx-auto">
               Junte-se a milhares de pessoas que já deram o primeiro passo rumo a uma vida livre de vícios.
             </p>
-            <Link href="/questionario">
-              <Button size="lg" className="bg-white text-emerald-600 hover:bg-gray-100 text-lg px-8 py-6 h-auto">
-                Criar Meu Plano Gratuito
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-            </Link>
+            <Button 
+              size="lg" 
+              onClick={handleStartJourney}
+              className="bg-white text-emerald-600 hover:bg-gray-100 text-lg px-8 py-6 h-auto"
+            >
+              Criar Meu Plano Gratuito
+              <ArrowRight className="ml-2 w-5 h-5" />
+            </Button>
           </Card>
         </div>
       </section>
